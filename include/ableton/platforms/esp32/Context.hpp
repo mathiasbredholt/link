@@ -51,7 +51,7 @@ class Context
         catch (...)
         {
         }
-        portYIELD();
+        vTaskDelay(1);
       }
     }
 
