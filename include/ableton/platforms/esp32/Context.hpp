@@ -24,6 +24,7 @@
 #include <ableton/platforms/asio/AsioWrapper.hpp>
 #include <ableton/platforms/asio/Socket.hpp>
 #include <ableton/platforms/esp32/LockFreeCallbackDispatcher.hpp>
+#include <driver/timer.h>
 #include <freertos/task.h>
 
 namespace ableton
@@ -46,12 +47,28 @@ class Context
       {
         try
         {
+
+          xSemaphoreTake(runner->tickSemphr, portMAX_DELAY);
           runner->mpService->poll_one();
         }
         catch (...)
         {
         }
-        vTaskDelay(1);
+      }
+    }
+
+
+    static void IRAM_ATTR timer_group0_isr(void* userParam)
+    {
+      static BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+
+      TIMERG0.int_clr_timers.t1 = 1;
+      TIMERG0.hw_timer[1].config.alarm_en = 1;
+
+      xSemaphoreGiveFromISR(userParam, &xHigherPriorityTaskWoken);
+      if (xHigherPriorityTaskWoken)
+      {
+        portYIELD_FROM_ISR();
       }
     }
 
@@ -60,6 +77,21 @@ class Context
       : mpService(new ::asio::io_service())
       , mpWork(new ::asio::io_service::work(*mpService))
     {
+      tickSemphr = xSemaphoreCreateBinary();
+      timer_config_t config = {.alarm_en = TIMER_ALARM_EN,
+        .counter_en = TIMER_PAUSE,
+        .intr_type = TIMER_INTR_LEVEL,
+        .counter_dir = TIMER_COUNT_UP,
+        .auto_reload = TIMER_AUTORELOAD_EN,
+        .divider = 80};
+
+      timer_init(TIMER_GROUP_0, TIMER_1, &config);
+      timer_set_counter_value(TIMER_GROUP_0, TIMER_1, 0);
+      timer_set_alarm_value(TIMER_GROUP_0, TIMER_1, 100);
+      timer_enable_intr(TIMER_GROUP_0, TIMER_1);
+      timer_isr_register(TIMER_GROUP_0, TIMER_1, &timer_group0_isr, tickSemphr, 0, nullptr);
+
+      timer_start(TIMER_GROUP_0, TIMER_1);
       xTaskCreatePinnedToCore(
         run, "link", 8192, this, 2 | portPRIVILEGE_BIT, &mTaskHandle, LINK_ESP_TASK_CORE_ID);
     }
@@ -82,6 +114,7 @@ class Context
 
   private:
     TaskHandle_t mTaskHandle;
+    SemaphoreHandle_t tickSemphr;
     std::unique_ptr<::asio::io_service> mpService;
     std::unique_ptr<::asio::io_service::work> mpWork;
   };
