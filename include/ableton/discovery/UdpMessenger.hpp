@@ -61,14 +61,15 @@ void sendUdpMessage(Interface& iface,
   const auto messageEnd =
     v1::detail::encodeMessage(move(from), ttl, messageType, payload, messageBegin);
   const auto numBytes = static_cast<size_t>(distance(messageBegin, messageEnd));
-  try
-  {
-    iface.send(buffer.data(), numBytes, to);
-  }
-  catch (const std::runtime_error& err)
-  {
-    throw UdpSendException{err, iface.endpoint().address()};
-  }
+  // try
+  // {
+  //   iface.send(buffer.data(), numBytes, to);
+  // }
+  // catch (const std::runtime_error& err)
+  // {
+  //   throw UdpSendException{err, iface.endpoint().address()};
+  // }
+  iface.send(buffer.data(), numBytes, to);
 }
 
 // UdpMessenger uses a "shared_ptr pImpl" pattern to make it movable
