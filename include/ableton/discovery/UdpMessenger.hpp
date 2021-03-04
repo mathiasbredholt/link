@@ -69,7 +69,9 @@ void sendUdpMessage(Interface& iface,
   // {
   //   throw UdpSendException{err, iface.endpoint().address()};
   // }
-  iface.send(buffer.data(), numBytes, to);
+  try {
+   iface.send(buffer.data(), numBytes, to); 
+  } catch (...) {}
 }
 
 // UdpMessenger uses a "shared_ptr pImpl" pattern to make it movable
