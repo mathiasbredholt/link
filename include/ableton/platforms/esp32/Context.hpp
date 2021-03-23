@@ -24,7 +24,7 @@
 #include <ableton/platforms/asio/AsioWrapper.hpp>
 #include <ableton/platforms/asio/Socket.hpp>
 #include <ableton/platforms/esp32/LockFreeCallbackDispatcher.hpp>
-#include <driver/timer.h>
+#include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 
 namespace ableton
@@ -40,15 +40,14 @@ class Context
   class ServiceRunner
   {
 
-    static void run(void* userParams)
+    static IRAM_ATTR void run(void* userParams)
     {
       auto runner = static_cast<ServiceRunner*>(userParams);
       for (;;)
       {
         try
         {
-
-          xSemaphoreTake(runner->tickSemphr, portMAX_DELAY);
+          ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
           runner->mpService->poll_one();
         }
         catch (...)
@@ -65,7 +64,7 @@ class Context
       TIMERG0.int_clr_timers.t1 = 1;
       TIMERG0.hw_timer[1].config.alarm_en = 1;
 
-      xSemaphoreGiveFromISR(userParam, &xHigherPriorityTaskWoken);
+      vTaskNotifyGiveFromISR(userParam, &xHigherPriorityTaskWoken);
       if (xHigherPriorityTaskWoken)
       {
         portYIELD_FROM_ISR();
@@ -77,7 +76,9 @@ class Context
       : mpService(new ::asio::io_service())
       , mpWork(new ::asio::io_service::work(*mpService))
     {
-      tickSemphr = xSemaphoreCreateBinary();
+      xTaskCreatePinnedToCore(
+        run, "link", 8192, this, 2 | portPRIVILEGE_BIT, &mTaskHandle, LINK_ESP_TASK_CORE_ID);
+
       timer_config_t config = {.alarm_en = TIMER_ALARM_EN,
         .counter_en = TIMER_PAUSE,
         .intr_type = TIMER_INTR_LEVEL,
@@ -89,11 +90,9 @@ class Context
       timer_set_counter_value(TIMER_GROUP_0, TIMER_1, 0);
       timer_set_alarm_value(TIMER_GROUP_0, TIMER_1, 100);
       timer_enable_intr(TIMER_GROUP_0, TIMER_1);
-      timer_isr_register(TIMER_GROUP_0, TIMER_1, &timer_group0_isr, tickSemphr, 0, nullptr);
+      timer_isr_register(TIMER_GROUP_0, TIMER_1, &timer_group0_isr, mTaskHandle, 0, nullptr);
 
       timer_start(TIMER_GROUP_0, TIMER_1);
-      xTaskCreatePinnedToCore(
-        run, "link", 8192, this, 2 | portPRIVILEGE_BIT, &mTaskHandle, LINK_ESP_TASK_CORE_ID);
     }
 
     ~ServiceRunner()
