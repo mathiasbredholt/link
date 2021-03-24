@@ -66,7 +66,9 @@ public:
     // Clear the measurement map in the IoContext so that whatever
     // cleanup code executes in response to the destruction of the
     // measurement objects still have access to the IoContext.
-    mIo->async([this] { mMeasurementMap.clear(); });
+    // mIo->async([this] { mMeasurementMap.clear(); });
+    // Todo(mb): Causes crash on ESP - changed to clear outside IoContext
+    mMeasurementMap.clear();
   }
 
   void updateNodeState(const SessionId& sessionId, const GhostXForm& xform)
