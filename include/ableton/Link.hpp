@@ -29,8 +29,12 @@
 namespace ableton
 {
 
-/*! @class Link
- *  @brief Class that represents a participant in a Link session.
+/*! @class Link and BasicLink
+ *  @brief Classes representing a participant in a Link session.
+ *  The BasicLink type allows to customize the clock. The Link type
+ *  uses the recommended platform-dependent representation of the
+ *  system clock as defined in platforms/Config.hpp.
+ *  It's preferred to use Link instead of BasicLink.
  *
  *  @discussion Each Link instance has its own session state which
  *  represents a beat timeline and a transport start/stop state. The
@@ -64,21 +68,26 @@ namespace ableton
  *  state from both the audio thread and an application thread
  *  concurrently is not advised and will potentially lead to unexpected
  *  behavior.
+ *
+ *  Only use the BasicLink class if the default platform clock does not
+ *  fulfill other requirements of the client application. Please note this
+ *  will require providing a custom Clock implementation. See the clock()
+ *  documentation for details.
  */
-class Link
+template <typename Clock>
+class BasicLink
 {
 public:
-  using Clock = link::platform::Clock;
   class SessionState;
 
   /*! @brief Construct with an initial tempo. */
-  Link(double bpm);
+  BasicLink(double bpm);
 
   /*! @brief Link instances cannot be copied or moved */
-  Link(const Link&) = delete;
-  Link& operator=(const Link&) = delete;
-  Link(Link&&) = delete;
-  Link& operator=(Link&&) = delete;
+  BasicLink(const BasicLink<Clock>&) = delete;
+  BasicLink& operator=(const BasicLink<Clock>&) = delete;
+  BasicLink(BasicLink<Clock>&&) = delete;
+  BasicLink& operator=(BasicLink<Clock>&&) = delete;
 
   /*! @brief Is Link currently enabled?
    *  Thread-safe: yes
@@ -152,13 +161,10 @@ public:
    *  Thread-safe: yes
    *  Realtime-safe: yes
    *
-   *  @discussion The Clock type is a platform-dependent
-   *  representation of the system clock. It exposes a ticks() method
-   *  that returns the current ticks of the system clock as well as
-   *  micros(), which is a normalized representation of the current system
-   *  time in std::chrono::microseconds. It also provides conversion
-   *  functions ticksToMicros() and microsToTicks() to faciliate
-   *  converting between these units.
+   *  @discussion The Clock type is a platform-dependent representation
+   *  of the system clock. It exposes a micros() method, which is a
+   *  normalized representation of the current system time in
+   *  std::chrono::microseconds.
    */
   Clock clock() const;
 
@@ -238,7 +244,12 @@ public:
   public:
     SessionState(const link::ApiState state, const bool bRespectQuantum);
 
-    /*! @brief: The tempo of the timeline, in bpm */
+    /*! @brief: The tempo of the timeline, in Beats Per Minute.
+     *
+     *  @discussion This is a stable value that is appropriate for display
+     *  to the user. Beat time progress will not necessarily match this tempo
+     *  exactly because of clock drift compensation.
+     */
     double tempo() const;
 
     /*! @brief: Set the timeline tempo to the given bpm value, taking
@@ -354,19 +365,38 @@ public:
       bool isPlaying, std::chrono::microseconds time, double beat, double quantum);
 
   private:
-    friend Link;
+    friend BasicLink<Clock>;
     link::ApiState mOriginalState;
     link::ApiState mState;
     bool mbRespectQuantum;
   };
 
 private:
+  using Controller = ableton::link::Controller<
+    link::PeerCountCallback,
+    link::TempoCallback,
+    link::StartStopStateCallback,
+    Clock,
+    link::platform::Random,
+    link::platform::IoContext>;
+
   std::mutex mCallbackMutex;
-  link::PeerCountCallback mPeerCountCallback;
-  link::TempoCallback mTempoCallback;
-  link::StartStopStateCallback mStartStopCallback;
+  link::PeerCountCallback mPeerCountCallback = [](std::size_t) {};
+  link::TempoCallback mTempoCallback = [](link::Tempo) {};
+  link::StartStopStateCallback mStartStopCallback = [](bool) {};
   Clock mClock;
-  link::platform::Controller mController;
+  Controller mController;
+};
+
+class Link : public BasicLink<link::platform::Clock>
+{
+public:
+  using Clock = link::platform::Clock;
+
+  Link(double bpm)
+    : BasicLink(bpm)
+  {
+  }
 };
 
 } // namespace ableton

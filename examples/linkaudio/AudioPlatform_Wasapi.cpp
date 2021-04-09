@@ -67,6 +67,7 @@ DWORD renderAudioRunloop(LPVOID lpParam)
 
 AudioPlatform::AudioPlatform(Link& link)
   : mEngine(link)
+  , mSampleTime(0)
   , mDevice(nullptr)
   , mAudioClient(nullptr)
   , mRenderClient(nullptr)
@@ -74,7 +75,6 @@ AudioPlatform::AudioPlatform(Link& link)
   , mEventHandle(nullptr)
   , mAudioThreadHandle(nullptr)
   , mIsRunning(false)
-  , mSampleTime(0)
 {
   initialize();
   mEngine.setBufferSize(bufferSize());
@@ -278,7 +278,7 @@ DWORD AudioPlatform::audioRunloop()
 
     mSampleTime += numSamples;
 
-    const auto bufferBeginAtOutput = hostTime + mEngine.mOutputLatency;
+    const auto bufferBeginAtOutput = hostTime + mEngine.mOutputLatency.load();
 
     mEngine.audioCallback(bufferBeginAtOutput, numSamples);
 

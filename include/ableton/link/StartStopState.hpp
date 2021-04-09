@@ -79,10 +79,10 @@ struct StartStopState
     using namespace std;
     using namespace discovery;
     auto result =
-      Deserialize<StartStopStateTuple>::fromNetworkByteStream(move(begin), move(end));
+      Deserialize<StartStopStateTuple>::fromNetworkByteStream(std::move(begin), std::move(end));
     auto state =
       StartStopState{get<0>(result.first), get<1>(result.first), get<2>(result.first)};
-    return make_pair(move(state), move(result.second));
+    return make_pair(std::move(state), std::move(result.second));
   }
 
   bool isPlaying{false};
@@ -94,6 +94,35 @@ private:
   {
     return std::make_tuple(isPlaying, beats, timestamp);
   }
+};
+
+struct ClientStartStopState
+{
+  ClientStartStopState() = default;
+
+  ClientStartStopState(const bool aIsPlaying,
+    const std::chrono::microseconds aTime,
+    const std::chrono::microseconds aTimestamp)
+    : isPlaying(aIsPlaying)
+    , time(aTime)
+    , timestamp(aTimestamp)
+  {
+  }
+
+  friend bool operator==(const ClientStartStopState& lhs, const ClientStartStopState& rhs)
+  {
+    return std::tie(lhs.isPlaying, lhs.time, lhs.timestamp)
+           == std::tie(rhs.isPlaying, rhs.time, rhs.timestamp);
+  }
+
+  friend bool operator!=(const ClientStartStopState& lhs, const ClientStartStopState& rhs)
+  {
+    return !(lhs == rhs);
+  }
+
+  bool isPlaying{false};
+  std::chrono::microseconds time{0};
+  std::chrono::microseconds timestamp{0};
 };
 
 struct ApiStartStopState

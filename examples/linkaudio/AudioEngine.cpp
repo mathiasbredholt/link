@@ -24,6 +24,7 @@
 #define _USE_MATH_DEFINES
 #endif
 #include <cmath>
+#include <iostream>
 
 namespace ableton
 {
@@ -33,12 +34,16 @@ namespace linkaudio
 AudioEngine::AudioEngine(Link& link)
   : mLink(link)
   , mSampleRate(44100.)
-  , mOutputLatency(0)
+  , mOutputLatency(std::chrono::microseconds{0})
   , mSharedEngineData({0., false, false, 4., false})
   , mLockfreeEngineData(mSharedEngineData)
   , mTimeAtLastClick{}
   , mIsPlaying(false)
 {
+  if (!mOutputLatency.is_lock_free())
+  {
+    std::cout << "WARNING: AudioEngine::mOutputLatency is not lock free!" << std::endl;
+  }
 }
 
 void AudioEngine::startPlaying()
@@ -143,7 +148,7 @@ void AudioEngine::renderMetronomeIntoBuffer(const Link::SessionState sessionStat
   {
     double amplitude = 0.;
     // Compute the host time for this sample and the last.
-    const auto hostTime = beginHostTime + microseconds(llround(i * microsPerSample));
+    const auto hostTime = beginHostTime + microseconds(llround(static_cast<double>(i) * microsPerSample));
     const auto lastSampleHostTime = hostTime - microseconds(llround(microsPerSample));
 
     // Only make sound for positive beat magnitudes. Negative beat

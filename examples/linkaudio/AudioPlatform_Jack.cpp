@@ -30,8 +30,8 @@ namespace linkaudio
 AudioPlatform::AudioPlatform(Link& link)
   : mEngine(link)
   , mSampleTime(0.)
-  , mpJackClient(NULL)
-  , mpJackPorts(NULL)
+  , mpJackClient(nullptr)
+  , mpJackPorts(nullptr)
 {
   initialize();
   start();
@@ -49,6 +49,20 @@ int AudioPlatform::audioCallback(jack_nframes_t nframes, void* pvUserData)
   return pAudioPlatform->audioCallback(nframes);
 }
 
+void AudioPlatform::latencyCallback(jack_latency_callback_mode_t, void* pvUserData)
+{
+  AudioPlatform* pAudioPlatform = static_cast<AudioPlatform*>(pvUserData);
+  pAudioPlatform->updateLatency();
+}
+
+void AudioPlatform::updateLatency()
+{
+  jack_latency_range_t latencyRange;
+  jack_port_get_latency_range(mpJackPorts[0], JackPlaybackLatency, &latencyRange);
+  mEngine.mOutputLatency.store(
+    std::chrono::microseconds(llround(1.0e6 * latencyRange.max / mEngine.mSampleRate)));
+}
+
 int AudioPlatform::audioCallback(jack_nframes_t nframes)
 {
   using namespace std::chrono;
@@ -58,7 +72,7 @@ int AudioPlatform::audioCallback(jack_nframes_t nframes)
 
   mSampleTime += nframes;
 
-  const auto bufferBeginAtOutput = hostTime + engine.mOutputLatency;
+  const auto bufferBeginAtOutput = hostTime + engine.mOutputLatency.load();
 
   engine.audioCallback(bufferBeginAtOutput, nframes);
 
@@ -76,7 +90,7 @@ void AudioPlatform::initialize()
 {
   jack_status_t status = JackFailure;
   mpJackClient = jack_client_open("LinkHut", JackNullOption, &status);
-  if (mpJackClient == NULL)
+  if (mpJackClient == nullptr)
   {
     std::cerr << "Could not initialize Audio Engine. ";
     std::cerr << "JACK: " << std::endl;
@@ -104,15 +118,23 @@ void AudioPlatform::initialize()
       std::cerr << "Client protocol version mismatch." << std::endl;
     std::cerr << std::endl;
     std::terminate();
-  };
+  }
+
+  const double bufferSize = jack_get_buffer_size(mpJackClient);
+  const double sampleRate = jack_get_sample_rate(mpJackClient);
+  mEngine.setBufferSize(static_cast<std::size_t>(bufferSize));
+  mEngine.setSampleRate(sampleRate);
+
+  jack_set_latency_callback(mpJackClient, AudioPlatform::latencyCallback, this);
 
   mpJackPorts = new jack_port_t*[2];
+
   for (int k = 0; k < 2; ++k)
   {
     const std::string port_name = "out_" + std::to_string(k + 1);
     mpJackPorts[k] = jack_port_register(
       mpJackClient, port_name.c_str(), JACK_DEFAULT_AUDIO_TYPE, JackPortIsOutput, 0);
-    if (mpJackPorts[k] == NULL)
+    if (mpJackPorts[k] == nullptr)
     {
       std::cerr << "Could not get Audio Device. " << std::endl;
       jack_client_close(mpJackClient);
@@ -121,15 +143,6 @@ void AudioPlatform::initialize()
   }
 
   jack_set_process_callback(mpJackClient, AudioPlatform::audioCallback, this);
-
-  const double bufferSize = jack_get_buffer_size(mpJackClient);
-  const double sampleRate = jack_get_sample_rate(mpJackClient);
-
-  mEngine.setBufferSize(static_cast<std::size_t>(bufferSize));
-  mEngine.setSampleRate(sampleRate);
-
-  mEngine.mOutputLatency =
-    std::chrono::microseconds(llround(1.0e6 * bufferSize / sampleRate));
 }
 
 void AudioPlatform::uninitialize()
@@ -137,13 +150,13 @@ void AudioPlatform::uninitialize()
   for (int k = 0; k < 2; ++k)
   {
     jack_port_unregister(mpJackClient, mpJackPorts[k]);
-    mpJackPorts[k] = NULL;
+    mpJackPorts[k] = nullptr;
   }
   delete[] mpJackPorts;
-  mpJackPorts = NULL;
+  mpJackPorts = nullptr;
 
   jack_client_close(mpJackClient);
-  mpJackClient = NULL;
+  mpJackClient = nullptr;
 }
 
 void AudioPlatform::start()
@@ -151,7 +164,7 @@ void AudioPlatform::start()
   jack_activate(mpJackClient);
 
   const char** playback_ports = jack_get_ports(
-    mpJackClient, 0, JACK_DEFAULT_AUDIO_TYPE, JackPortIsInput | JackPortIsPhysical);
+    mpJackClient, nullptr, JACK_DEFAULT_AUDIO_TYPE, JackPortIsInput | JackPortIsPhysical);
 
   if (playback_ports)
   {
