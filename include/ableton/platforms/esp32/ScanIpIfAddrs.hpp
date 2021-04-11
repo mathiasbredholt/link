@@ -40,9 +40,12 @@ struct ScanIpIfAddrs
     esp_netif_t* esp_netif = esp_netif_next(NULL);
     while (esp_netif)
     {
-      esp_netif_ip_info_t ip_info;
-      esp_netif_get_ip_info(esp_netif, &ip_info);
-      addrs.emplace_back(::asio::ip::address_v4(ntohl(ip_info.ip.addr)));
+      // Check if interface is active
+      if (esp_netif_is_netif_up(esp_netif)) {
+        esp_netif_ip_info_t ip_info;
+        esp_netif_get_ip_info(esp_netif, &ip_info);
+        addrs.emplace_back(::asio::ip::address_v4(ntohl(ip_info.ip.addr)));
+      }
       // Get next network interface
       esp_netif = esp_netif_next(esp_netif);
     }
